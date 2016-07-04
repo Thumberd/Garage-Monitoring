@@ -1,10 +1,29 @@
+import logging
+ 
+from logging.handlers import RotatingFileHandler
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+ 
+formatter = logging.Formatter('%(asctime)s :: %(levelname)s :: %(message)s')
+file_handler = RotatingFileHandler('/home/chip/Garage/garage.log', 'a', 1000000, 1)
+
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+ 
+
+steam_handler = logging.StreamHandler()
+steam_handler.setLevel(logging.DEBUG)
+logger.addHandler(steam_handler)
+
 import requests
 from chipGPIO import *
 import time
 import json
 import PiCom
 
-Fjson = open("data.json", "r")
+Fjson = open("/home/chip/Garage/data.json", "r")
 data = Fjson.read()
 Fjson.close()
 
@@ -31,6 +50,10 @@ def sendSMS(msg):
     for user in jsonData['apiFree']:
         r = requests.get("https://smsapi.free-mobile.fr/sendmsg?user=" + str(user['user']) + "&pass=" + str(user['key']) + "&msg=" + str(msg))
 
+def informRPI(id, state):
+	payload={'state': state}
+	r = requests.post("http://192.168.0.17/api/v1/garage/" + str(id), data=payload)
+
 pinMode(PEU, INPUT)
 PEUtimeUp = 0
 PEUisUp = False
@@ -44,10 +67,11 @@ Xnotified = False
 while True:
         PEUval = digitalRead(PEU)
         Xval = digitalRead(X)
-        print(str(PEUval) + " / " + str(Xval))
+        logger.info(str(PEUval) + " / " + str(Xval))
         if PEUval == 1:
-                print("Garage 208 ouvert")
+                logger.info("Garage 208 ouvert")
                 if(not PEUisUp):
+			PiCom.updateGarageState(jsonData['garage'][0]['id'], 1)
                         PEUtimeUp = time.time()
                         PEUisUp = True
                 print(time.time() - PEUtimeUp)
@@ -55,13 +79,16 @@ while True:
                         sendSMS("Garage 208 ouvert depuis plus de 5min. Normal ?")
                         PEUnotified = True
         elif PEUval == 0:
+		if PEUisUp == True:
+			PiCom.updateGarageState(jsonData['garage'][0]['id'], 0)
                 PEUnotified = False
                 PEUtimeUp = 0
                 PEUisUp = False
 
         if Xval == 1:
-                print("Garage Xsara ouvert")
+                logger.info("Garage Xsara ouvert")
                 if(not XisUp):
+			PiCom.updateGarageState(jsonData['garage'][1]['id'], 1)
                         XtimeUp = time.time()
                         XisUp = True
                 print(time.time() - XtimeUp)
@@ -69,6 +96,8 @@ while True:
                         sendSMS("Garage Xsara ouvert depuis plus de 5min. Normal ?")
                         Xnotified = True
         elif Xval == 0:
+		if XisUp:
+			PiCom.updateGarageState(jsonData['garage'][1]['id'], 0)
                 Xnotified = False
                 XtimeUp = 0
                 XisUp = False
